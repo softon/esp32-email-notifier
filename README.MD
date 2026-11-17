@@ -1,275 +1,187 @@
 # ESP32 Email Notifier
 
-A compact Wi-Fi enabled email notification device built using ESP32 Dev Board.
-
-The device connects to Gmail using IMAP and plays different melodies for:
-
-* Power ON
-* WiFi Connected
-* New Email Received
-
-A single blue LED is used for visual status indication.
+A smart, Wi-Fi enabled email notification gadget built with an ESP32 Dev Board. It periodically polls your Gmail inbox over secure IMAP (SSL) and provides real-time ambient visual indications via a **WS2812B NeoPixel RGB LED** alongside audible alerts via a **passive piezo buzzer**.
 
 ---
 
-![Circuit Diagram](/diagram.png)
-
 # Features
 
-* WiFi connectivity using ESP32
-* Gmail IMAP integration
-* Passive buzzer melody notifications
-* Single status LED
-* Detects new unread emails
-* Minimal hardware design
-* PlatformIO compatible
-* Lightweight and low-cost
+* **Wi-Fi Connectivity**: Auto-connect and auto-reconnect if connection is lost.
+* **Gmail IMAP Integration**: Secure SSL polling of Gmail using an App Password.
+* **Non-Blocking FreeRTOS NeoPixel Engine**: Runs smooth 50 FPS animations on Core 0 so network polling never causes LED stuttering or lag.
+* **Ambient Heartbeat Pulse**: Authentic organic double-beat ("lub-dub") breathing animation in color-coded states.
+* **Smart Multi-Stage Email Escalation**:
+  * **Green Heartbeat**: All caught up (0 unread emails).
+  * **Orange Heartbeat**: 1 unread email detected.
+  * **Red Alert Pulse**: Escalates to Red if >1 unread emails exist, OR if 1 unread email remains unread after 2 consecutive polls.
+  * **Checking Email Animation**: Dynamic cyan/violet shimmer (or rotary chaser for multi-pixel strips) while polling IMAP.
+* **Buzzer Melodies**:
+  * Power ON melody
+  * Wi-Fi Connected chime
+  * New Email chime
+  * Urgent/Escalated Email alarm
+  * Error warning tone
+* **PlatformIO Compatible**: Ready to build and upload out of the box.
 
 ---
 
 # Hardware Requirements
 
-| Component            | Quantity    |
-| -------------------- | ----------- |
-| ESP32 Dev Board      | 1           |
-| Passive Piezo Buzzer | 1           |
-| Blue LED             | 1           |
-| 220Ω Resistor        | 1           |
-| Perfboard / PCB      | 1           |
-| Jumper Wires         | As required |
-| USB Cable            | 1           |
+| Component | Quantity | Notes |
+| --- | --- | --- |
+| ESP32 Dev Board (ESP32-WROOM-32) | 1 | 30-pin or 38-pin module |
+| WS2812B / NeoPixel RGB LED | 1 or more | Single pixel, 8-LED stick, or ring |
+| Passive Piezo Buzzer | 1 | Driven via ESP32 LEDC PWM |
+| Single Blue/Red LED (optional) | 1 | Status indication |
+| 220Ω - 330Ω Resistors | 1-2 | Current-limiting for LED and DIN |
+| Jumper Wires & Breadboard/PCB | As required | |
+| Micro-USB Cable | 1 | For power and programming |
 
 ---
 
-# Circuit Diagram
+# Circuit Diagram & Pinout
 
-## LED Connection
+| Function | ESP32 GPIO | Connection |
+| --- | --- | --- |
+| **NeoPixel DIN (Data In)** | **GPIO 27** | Connect to DIN through a 330Ω resistor (VCC to 5V/VIN or 3.3V, GND to GND) |
+| **Passive Piezo Buzzer (+)** | **GPIO 25** | Positive pin of buzzer to GPIO25, negative pin to GND |
+| **Status LED (Optional)** | **GPIO 26** | Anode through 220Ω resistor to GPIO26, Cathode to GND |
 
-```text id="5xap5r"
-GPIO26 → 220Ω resistor → LED anode
-LED cathode → GND
+### Wiring Diagram
+
+```text
+               +------------------------------------+
+               |           ESP32 Dev Board          |
+               +------------------------------------+
+                                 |
+       GPIO27 ----------------[ 330Ω ]------------ DIN (NeoPixel WS2812B)
+       5V/VIN ------------------------------------ VDD / 5V
+       GND    ------------------------------------ GND
+                                 |
+       GPIO25 ------------------------------------ Buzzer (+)
+       GND    ------------------------------------ Buzzer (-)
+                                 | (Optional Single LED)
+       GPIO26 ----------------[ 220Ω ]------------ Anode (+)
+       GND    ------------------------------------ Cathode (-)
 ```
 
-## Passive Buzzer Connection
-
-```text id="jlwm85"
-GPIO25 → Buzzer +
-GND → Buzzer -
-```
-
 ---
 
-# GPIO Configuration
+# NeoPixel Visual States & Animations
 
-| Function       | GPIO   |
-| -------------- | ------ |
-| Passive Buzzer | GPIO25 |
-| Blue LED       | GPIO26 |
-
----
-
-# LED Status Indications
-
-| LED State  | Meaning              |
-| ---------- | -------------------- |
-| Slow Blink | Connecting to WiFi   |
-| Solid ON   | WiFi Connected       |
-| Fast Blink | Melody Playback      |
-| OFF        | Error / Disconnected |
+| State | NeoPixel Color | Animation Behavior | Trigger Condition |
+| --- | --- | --- | --- |
+| **Booting** | Soft White / Sky Blue | Smooth gentle fade-in | Startup initialization |
+| **Wi-Fi Connecting** | Sky Blue (`#0096FF`) | Smooth breathing pulse (~800ms period) | Trying to connect to Wi-Fi |
+| **Wi-Fi Disconnected** | Magenta (`#FF0080`) | Blinking warning (400ms ON / 400ms OFF) | Wi-Fi lost / reconnecting |
+| **Checking Email** | Vibrant Cyan / Electric Violet | Fast dual-color pulsating shimmer (or chaser) | Actively polling IMAP server |
+| **All Clear (0 Unread)** | **Green** (`#00FF00`) | **Heartbeat pulse** (organic double "lub-dub") | 0 unread emails in INBOX |
+| **1 Unread Email** | **Orange** (`#FF7800`) | **Heartbeat pulse** in warm orange | 1 unread email on 1st poll |
+| **Urgent Unread** | **Red** (`#FF0000`) | **Fast Heartbeat / Alert pulse** | **>1 unread emails** OR **1 unread persisting ≥ 2 polls** |
+| **Error / Auth Failure** | Amber / Dark Red | Rapid warning flash (250ms) | IMAP login failed / connection error |
 
 ---
 
 # Melody Notifications
 
-## Power ON Melody
-
-Played during startup.
-
-```text id="z78m5v"
-♪ C E G C ♪
-```
-
----
-
-## WiFi Connected Melody
-
-```text id="jlwm85"
-♪ G C ♪
-```
-
----
-
-## New Email Melody
-
-```text id="jlwm85"
-♪ C E G ♪
-```
-
----
-
-# Software Requirements
-
-* [PlatformIO](https://platformio.org?utm_source=chatgpt.com)
-* [Visual Studio Code](https://code.visualstudio.com?utm_source=chatgpt.com)
-* WiFi network
-* Gmail account
+* **Power ON**: Ascending welcome arpeggio (`C5, E5, G5, C6`)
+* **Wi-Fi Connected**: Double success chime (`G5, C6`)
+* **New Email Received**: Playful alert chime (`C6, E6, G6`)
+* **Urgent Unread Alert**: Attention-grabbing alarm (`A6, E6, A6, C7` repeated)
+* **Error**: Low descending warning tones (`G4, E4`)
 
 ---
 
 # Gmail Configuration
 
-## Step 1 — Enable IMAP
+### Step 1 — Enable IMAP in Gmail
+1. Open [Gmail Settings](https://mail.google.com/mail/u/0/#settings/fwdandpop).
+2. Select the **Forwarding and POP/IMAP** tab.
+3. Under **IMAP Access**, select **Enable IMAP**.
+4. Click **Save Changes**.
 
-Open:
+### Step 2 — Generate a Google App Password
+> **Important:** Embedded devices cannot use your regular Google account password if 2-Step Verification is enabled.
+1. Go to [Google Account App Passwords](https://myaccount.google.com/apppasswords).
+2. Sign in to your Google Account.
+3. Name your app (e.g., `ESP32 Email Notifier`) and click **Create**.
+4. Copy the generated **16-character password** (e.g., `abcd efgh ijkl mnop`).
 
-* [Gmail Settings](https://mail.google.com?utm_source=chatgpt.com)
+---
 
-Navigate to:
+# Configuration & Flashing
 
-```text id="1u3u8g"
-Settings → Forwarding and POP/IMAP → Enable IMAP
+### 1. Configure Credentials in `src/main.cpp`
+
+Open `src/main.cpp` and update the following settings:
+
+```cpp
+// Wi-Fi Credentials
+#define WIFI_SSID           "YOUR_WIFI_NAME"
+#define WIFI_PASSWORD       "YOUR_WIFI_PASSWORD"
+
+// Gmail Credentials
+#define AUTHOR_EMAIL        "yourgmail@gmail.com"
+#define AUTHOR_PASSWORD     "abcdefghijklmnop" // 16-character App Password without spaces
+
+// Hardware Pins (Adjust if you use different pins)
+#define NEOPIXEL_PIN        27       // Data In pin for NeoPixel
+#define NUM_PIXELS          1        // Number of NeoPixels (1 for single, 8 for ring/strip)
+#define BUZZER_PIN          25       // Buzzer pin
 ```
 
----
+### 2. Build and Upload
 
-## Step 2 — Generate App Password
+Using PlatformIO CLI:
 
-Google blocks normal passwords for embedded devices.
-
-Generate an App Password here:
-
-* [Google App Passwords](https://myaccount.google.com/apppasswords?utm_source=chatgpt.com)
-
-Use the generated password inside the code:
-
-```cpp id="z4q4cb"
-#define AUTHOR_PASSWORD "YOUR_APP_PASSWORD"
-```
-
----
-
-# Installation
-
-## Clone Repository
-
-```bash id="kgln9q"
-git clone https://github.com/yourusername/esp32-email-notifier.git
-```
-
----
-
-## Open in PlatformIO
-
-Open the project folder in:
-
-* Visual Studio Code with PlatformIO extension
-
----
-
-## Configure WiFi and Email
-
-Edit:
-
-```cpp id="9mp9x3"
-#define WIFI_SSID       "YOUR_WIFI_NAME"
-#define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
-
-#define AUTHOR_EMAIL    "yourgmail@gmail.com"
-#define AUTHOR_PASSWORD "YOUR_APP_PASSWORD"
-```
-
----
-
-## Build and Upload
-
-```bash id="m0hmyl"
+```bash
+# Compile project
 pio run
+
+# Upload firmware to ESP32
 pio run --target upload
-```
 
----
-
-# PlatformIO Configuration
-
-```ini id="jlwm85"
-[env:esp32dev]
-platform = espressif32
-board = esp32dev
-framework = arduino
-
-monitor_speed = 115200
-
-lib_deps =
-    mobizt/ESP Mail Client @ ^3.4.20
-```
-
----
-
-# Serial Monitor
-
-```bash id="jlwm85"
+# Open Serial Monitor at 115200 baud
 pio device monitor
 ```
 
-Example output:
+---
 
-```text id="jlwm85"
-Connecting to WiFi...
-WiFi Connected!
+# Serial Monitor Output Example
 
-Checking email...
-Unread Emails: 2
+```text
+========================================
+      ESP32 EMAIL NOTIFIER STARTUP      
+========================================
+Connecting to Wi-Fi SSID: MyHomeWiFi
+....
+Wi-Fi Connected successfully!
+IP Address: 192.168.1.105
+Signal Strength (RSSI): -52 dBm
 
-NEW EMAIL DETECTED!
+----------------------------------------
+[Poll #1] Checking Gmail (yourgmail@gmail.com)...
+----------------------------------------
+INBOX Total Messages: 412
+[✓] Status: ALL CLEAR (NeoPixel: GREEN Heartbeat)
+
+----------------------------------------
+[Poll #2] Checking Gmail (yourgmail@gmail.com)...
+----------------------------------------
+INBOX Total Messages: 413
+[!] 1 Unread email detected (Poll count for this unread: 1)
+[!] Status: 1 UNREAD EMAIL (NeoPixel: ORANGE Heartbeat)
+
+----------------------------------------
+[Poll #3] Checking Gmail (yourgmail@gmail.com)...
+----------------------------------------
+INBOX Total Messages: 413
+[!] 1 Unread email detected (Poll count for this unread: 2)
+[⚠] Status: 1 UNREAD STILL UNREAD AFTER 2+ POLLS! (NeoPixel: RED Alert)
 ```
-
----
-
-# Project Structure
-
-```text id="jlwm85"
-project/
-│
-├── platformio.ini
-└── src/
-    └── main.cpp
-```
-
----
-
-# Power Consumption
-
-Recommended:
-
-* USB power for initial testing
-
-Future enhancements:
-
-* 18650 battery support
-* TP4056 charging circuit
-* deep sleep mode
-
----
-
-# Future Improvements
-
-* Battery operation
-* Deep sleep power saving
-* Web configuration page
-* Multiple email accounts
-* Sender-based melodies
-* OTA firmware updates
-* Compact 3D printed enclosure
 
 ---
 
 # License
 
-MIT License
-
----
-
-# Acknowledgements
-
-* [ESP Mail Client Library](https://github.com/mobizt/ESP-Mail-Client?utm_source=chatgpt.com)
-* [ESP32 Arduino Core](https://github.com/espressif/arduino-esp32?utm_source=chatgpt.com)
+MIT License. Open-source and free to adapt for personal or commercial projects.
